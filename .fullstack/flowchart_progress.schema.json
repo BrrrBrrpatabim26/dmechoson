@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fullstack-design/schemas/flowchart_progress.json",
+  "title": "Flowchart Progress",
+  "description": "Tracks which nodes in Business.md flowcharts #1 and #2 have been completed, are pending, or are blocked. Updated after every workflow step. Enforces constitution §4a 'End-to-End Automation' by making flowchart cross-check state inspectable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["flowchart", "version", "updated_at", "current_node", "visited", "pending"],
+  "properties": {
+    "flowchart": {
+      "type": "string",
+      "enum": ["business_1_fullstack_sdd", "business_2_ui_design"],
+      "description": "Which Business.md flowchart is being tracked."
+    },
+    "spec_id": {
+      "type": ["string", "null"],
+      "description": "Feature spec id this progress belongs to (e.g. '2026-09-03_user-auth'). Null for global progress."
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version of the progress file (semver)."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "current_node": {
+      "type": ["string", "null"],
+      "description": "Node id currently being executed. Null if workflow is idle / done."
+    },
+    "visited": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node", "status", "at"],
+        "properties": {
+          "node": {"type": "string"},
+          "status": {"type": "string", "enum": ["ok", "waived", "auto_fixed", "failed"]},
+          "at": {"type": "string", "format": "date-time"},
+          "evidence": {"type": ["string", "null"], "description": "Path to evaluation artifact, gate report, or log."},
+          "note": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "pending": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Node ids still to execute, in flowchart order."
+    },
+    "gate_results": {
+      "type": "array",
+      "description": "Audit log of every auto-resolved gate (replaces human approval evidence).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gate", "decision", "at", "inputs", "threshold", "evidence"],
+        "properties": {
+          "gate": {"type": "string"},
+          "decision": {"type": "string", "enum": ["pass", "fail", "waived"]},
+          "at": {"type": "string", "format": "date-time"},
+          "inputs": {"type": "object"},
+          "threshold": {"type": "object"},
+          "evidence": {"type": ["string", "null"]},
+          "rationale": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "waivers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node", "reason", "at"],
+        "properties": {
+          "node": {"type": "string"},
+          "reason": {"type": "string"},
+          "at": {"type": "string", "format": "date-time"},
+          "loop_count": {"type": ["integer", "null"]}
+        }
+      }
+    }
+  }
+}

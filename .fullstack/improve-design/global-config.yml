@@ -1,0 +1,14 @@
+# Global Config — default for new fullstack-cli projects.
+# Loaded by /fullstack.improve-design. Edit in-place after `crindex improve-design init`.
+
+min_score: 85                  # 0..100; below this, the draft is re-iterated.
+max_loop: 2                   # >= 1; iterations per page before human escalation.
+anti_ui_policy: high-bar      # one of: zero-tolerance | high-bar | pragmatic.
+default_device_targets:       # applied to every page unless overridden.
+  - desktop
+  - mobile
+ui_mode_confidence_threshold: 0.80   # 0..1; >= this and AI auto-picks ui_mode.
+ui_mode: auto                  # auto | 2d | 2-5d | 3d | hybrid.
+framework_adapter: react
+design_tokens: {}              # populated by /fullstack.design (5-layer hex).
+component_inventory: {}        # populated by /fullstack.design (component catalog).
