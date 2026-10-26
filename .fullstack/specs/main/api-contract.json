@@ -1,0 +1,430 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Auth Service API",
+    "version": "1.0.0",
+    "description": "User/Auth + Verify — Spring Boot 3.2, MySQL ULID, JWT Bearer, Kafka events + RabbitMQ jobs. Base: /api/v1/auth"
+  },
+  "servers": [{ "url": "http://localhost:8080" }],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [{ "name": "Auth" }],
+  "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Đăng ký tài khoản",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/TraceId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" },
+              "examples": {
+                "ok": {
+                  "value": {
+                    "email": "an@example.com",
+                    "password": "Secret123",
+                    "fullName": "An Nguyen",
+                    "clientIp": "1.2.3.4"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created — USER_REGISTERED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/Envelope" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": { "$ref": "#/components/schemas/RegisterData" }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "code": "USER_REGISTERED",
+                      "message": "Đăng ký thành công, vui lòng kiểm tra email xác thực",
+                      "data": {
+                        "user": {
+                          "id": "01J9Z8KX7Q2M5N6P8R0T1V3W5Y",
+                          "email": "an@example.com",
+                          "fullName": "An Nguyen",
+                          "status": "PENDING",
+                          "emailVerifiedAt": null,
+                          "createdAt": "2026-10-06T15:00:00Z"
+                        },
+                        "verificationEmailQueued": true
+                      },
+                      "traceId": "t-123",
+                      "timestamp": "2026-10-06T15:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": {
+            "description": "Conflict — email trùng",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "examples": {
+                  "conflict": {
+                    "value": {
+                      "code": "USER_EMAIL_CONFLICT",
+                      "message": "Email đã tồn tại",
+                      "errors": [],
+                      "traceId": "t-123",
+                      "timestamp": "2026-10-06T15:00:00Z",
+                      "path": "/api/v1/auth/register"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Xác thực email bằng token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VerifyEmailRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — USER_VERIFIED",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EnvelopeEmpty" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "410": { "$ref": "#/components/responses/TokenExpired" }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Đăng nhập, trả JWT access+refresh",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "examples": {
+                "ok": {
+                  "value": {
+                    "email": "an@example.com",
+                    "password": "Secret123",
+                    "clientIp": "1.2.3.4",
+                    "userAgent": "Mozilla/5.0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — AUTH_OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/Envelope" },
+                    {
+                      "type": "object",
+                      "properties": { "data": { "$ref": "#/components/schemas/LoginData" } }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/ForbiddenLocked" },
+          "422": { "$ref": "#/components/responses/Unverified" }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Rotate refresh token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — AUTH_REFRESHED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/Envelope" },
+                    {
+                      "type": "object",
+                      "properties": { "data": { "$ref": "#/components/schemas/RefreshData" } }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Quên mật khẩu — luôn 202 chống enumeration",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted — RESET_QUEUED",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/EnvelopeEmpty" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Đặt lại mật khẩu bằng token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — PASSWORD_RESET",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/EnvelopeEmpty" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "410": { "$ref": "#/components/responses/TokenExpired" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "parameters": {
+      "TraceId": {
+        "name": "X-Trace-Id",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "Trace id cho structured logging; server tự sinh nếu thiếu"
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["email", "password", "fullName"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 255 },
+          "password": { "type": "string", "minLength": 8, "maxLength": 72, "description": "Phải có hoa, thường, số" },
+          "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "clientIp": { "type": "string", "maxLength": 45 }
+        }
+      },
+      "VerifyEmailRequest": {
+        "type": "object",
+        "required": ["token"],
+        "properties": { "token": { "type": "string", "minLength": 1 } }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 1, "maxLength": 72 },
+          "clientIp": { "type": "string" },
+          "userAgent": { "type": "string" }
+        }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "required": ["refreshToken"],
+        "properties": { "refreshToken": { "type": "string" } }
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": { "email": { "type": "string", "format": "email" } }
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": ["token", "newPassword"],
+        "properties": {
+          "token": { "type": "string" },
+          "newPassword": { "type": "string", "minLength": 8, "maxLength": 72 }
+        }
+      },
+      "UserDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "ULID 26 ký tự", "example": "01J9Z8KX7Q2M5N6P8R0T1V3W5Y" },
+          "email": { "type": "string", "format": "email" },
+          "fullName": { "type": "string" },
+          "status": { "type": "string", "enum": ["PENDING", "ACTIVE", "LOCKED"] },
+          "emailVerifiedAt": { "type": ["string", "null"], "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RegisterData": {
+        "type": "object",
+        "properties": {
+          "user": { "$ref": "#/components/schemas/UserDto" },
+          "verificationEmailQueued": { "type": "boolean" }
+        }
+      },
+      "LoginData": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "tokenType": { "type": "string", "example": "Bearer" },
+          "expiresIn": { "type": "integer", "example": 900 },
+          "user": { "$ref": "#/components/schemas/UserDto" }
+        }
+      },
+      "RefreshData": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "expiresIn": { "type": "integer", "example": 900 }
+        }
+      },
+      "Envelope": {
+        "type": "object",
+        "required": ["code", "message", "traceId", "timestamp"],
+        "properties": {
+          "code": { "type": "string", "example": "USER_REGISTERED" },
+          "message": { "type": "string" },
+          "traceId": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EnvelopeEmpty": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "data": { "type": ["object", "null"] },
+          "traceId": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "example": "BAD_REQUEST" },
+          "message": { "type": "string" },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": { "type": "string" },
+                "message": { "type": "string" },
+                "code": { "type": "string" }
+              }
+            }
+          },
+          "traceId": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "400 — BAD_REQUEST kèm field errors",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+        }
+      },
+      "Unauthorized": {
+        "description": "401 — AUTH_BAD_CREDENTIALS / token hết hạn",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+        }
+      },
+      "ForbiddenLocked": {
+        "description": "403 — USER_LOCKED",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+        }
+      },
+      "NotFound": {
+        "description": "404 — USER_NOT_FOUND",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+        }
+      },
+      "TokenExpired": {
+        "description": "410 — token verify/reset hết hạn",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+        }
+      },
+      "Unverified": {
+        "description": "422 — USER_NOT_VERIFIED",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+        }
+      }
+    }
+  }
+}

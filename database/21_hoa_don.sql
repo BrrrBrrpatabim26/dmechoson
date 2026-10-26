@@ -1,0 +1,26 @@
+-- Bảng 21: Hóa đơn thanh toán (Hỗ trợ tách hóa đơn con từ đơn gốc)
+CREATE TABLE IF NOT EXISTS hoa_don (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ma_hoa_don VARCHAR(30) NOT NULL UNIQUE,
+    idempotency_key VARCHAR(64) NOT NULL UNIQUE COMMENT 'BR-17: Khóa lũy đẳng chống chốt hóa đơn 2 lần',
+    don_hang_id BIGINT NOT NULL,
+    ca_lam_viec_id BIGINT NOT NULL,
+    thu_ngan_id BIGINT NOT NULL,
+    la_hoa_don_tach BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'TRUE nếu được tách ra từ đơn gốc',
+    tong_tien_mon DECIMAL(15,2) NOT NULL,
+    ti_le_giam_gia DECIMAL(5,2) DEFAULT 0.00,
+    so_tien_giam_gia DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    ly_do_giam_gia VARCHAR(255),
+    quan_ly_duyet_giam_gia_id BIGINT COMMENT 'BR-10: Bắt buộc nếu vượt hạn mức nhân viên',
+    tien_thue_vat DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    phi_phuc_vu DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    tien_coc_khau_tru DECIMAL(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Khấu trừ từ phieu_dat_ban',
+    tong_phai_thu DECIMAL(15,2) NOT NULL CHECK (tong_phai_thu >= 0),
+    trang_thai VARCHAR(30) NOT NULL DEFAULT 'TAM_TINH' COMMENT 'TAM_TINH, DA_CHOT',
+    thoi_gian_in_tam_tinh TIMESTAMP NULL,
+    thoi_gian_chot TIMESTAMP NULL,
+    CONSTRAINT fk_hoadon_donhang FOREIGN KEY (don_hang_id) REFERENCES don_hang(id),
+    CONSTRAINT fk_hoadon_ca FOREIGN KEY (ca_lam_viec_id) REFERENCES ca_lam_viec(id),
+    CONSTRAINT fk_hoadon_thungan FOREIGN KEY (thu_ngan_id) REFERENCES tai_khoan(id),
+    CONSTRAINT fk_hoadon_qlduyetgiamgia FOREIGN KEY (quan_ly_duyet_giam_gia_id) REFERENCES tai_khoan(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

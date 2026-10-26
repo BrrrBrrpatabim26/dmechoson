@@ -1,0 +1,190 @@
+{
+  "asyncapi": "2.6.0",
+  "info": {
+    "title": "Auth Service Messaging",
+    "version": "1.0.0",
+    "description": "Kafka cho Domain Events (event log) + RabbitMQ cho jobs (task queue). Idempotent producer, manual ack, DLQ."
+  },
+  "servers": {
+    "kafka": { "url": "localhost:9092", "protocol": "kafka", "description": "Kafka bootstrap" },
+    "rabbit": { "url": "localhost:5672", "protocol": "amqp", "description": "RabbitMQ user.direct" }
+  },
+  "channels": {
+    "user.registered": {
+      "description": "Kafka topic user.registered — 6 partitions, key=userId, acks=all, idempotent, lz4, retention 7d",
+      "publish": {
+        "operationId": "publishUserRegistered",
+        "message": { "$ref": "#/components/messages/UserRegistered" }
+      },
+      "subscribe": {
+        "operationId": "consumeUserRegistered",
+        "message": { "$ref": "#/components/messages/UserRegistered" },
+        "bindings": { "kafka": { "groupId": { "type": "string", "enum": ["notification-service", "audit-service"] } } }
+      }
+    },
+    "user.verified": {
+      "description": "Kafka topic user.verified — 6 partitions, key=userId, retention 7d",
+      "publish": {
+        "operationId": "publishUserVerified",
+        "message": { "$ref": "#/components/messages/UserVerified" }
+      }
+    },
+    "user.login_failed": {
+      "description": "Kafka topic user.login_failed — 6 partitions, key=userId|email, retention 3d, consumer risk-service",
+      "publish": {
+        "operationId": "publishLoginFailed",
+        "message": { "$ref": "#/components/messages/UserLoginFailed" }
+      }
+    },
+    "user.mail.send": {
+      "description": "RabbitMQ user.direct -> user.mail.queue (durable, DLQ user.dlq, retry 3x backoff 5s/15s/60s)",
+      "publish": {
+        "operationId": "sendMailJob",
+        "message": { "$ref": "#/components/messages/SendMailJob" }
+      },
+      "bindings": {
+        "amqp": {
+          "exchange": { "name": "user.direct", "type": "direct", "durable": true },
+          "queue": { "name": "user.mail.queue", "durable": true },
+          "bindingVersion": "0.2.0"
+        }
+      }
+    },
+    "user.sms.send": {
+      "description": "RabbitMQ user.direct -> user.sms.queue",
+      "publish": {
+        "operationId": "sendSmsJob",
+        "message": { "$ref": "#/components/messages/SendSmsJob" }
+      }
+    },
+    "user.audit.log": {
+      "description": "RabbitMQ user.direct -> user.audit.queue (concurrency 1, append-only)",
+      "publish": {
+        "operationId": "sendAuditJob",
+        "message": { "$ref": "#/components/messages/AuditJob" }
+      }
+    }
+  },
+  "components": {
+    "messages": {
+      "UserRegistered": {
+        "name": "UserRegistered",
+        "title": "user.registered v1",
+        "payload": {
+          "type": "object",
+          "required": ["eventId", "eventType", "version", "occurredAt", "userId", "email", "fullName", "traceId"],
+          "properties": {
+            "eventId": { "type": "string", "format": "uuid" },
+            "eventType": { "type": "string", "const": "user.registered" },
+            "version": { "type": "integer", "const": 1 },
+            "occurredAt": { "type": "string", "format": "date-time" },
+            "userId": { "type": "string", "description": "ULID 26" },
+            "email": { "type": "string", "format": "email" },
+            "fullName": { "type": "string" },
+            "traceId": { "type": "string" }
+          },
+          "examples": [
+            {
+              "eventId": "e-111",
+              "eventType": "user.registered",
+              "version": 1,
+              "occurredAt": "2026-10-06T15:00:00Z",
+              "userId": "01J9Z8KX7Q2M5N6P8R0T1V3W5Y",
+              "email": "an@example.com",
+              "fullName": "An Nguyen",
+              "traceId": "t-123"
+            }
+          ]
+        },
+        "headers": {
+          "type": "object",
+          "properties": { "traceId": { "type": "string" } }
+        }
+      },
+      "UserVerified": {
+        "name": "UserVerified",
+        "title": "user.verified v1",
+        "payload": {
+          "type": "object",
+          "required": ["eventId", "eventType", "version", "occurredAt", "userId", "email", "traceId"],
+          "properties": {
+            "eventId": { "type": "string", "format": "uuid" },
+            "eventType": { "type": "string", "const": "user.verified" },
+            "version": { "type": "integer", "const": 1 },
+            "occurredAt": { "type": "string", "format": "date-time" },
+            "userId": { "type": "string" },
+            "email": { "type": "string", "format": "email" },
+            "traceId": { "type": "string" }
+          }
+        }
+      },
+      "UserLoginFailed": {
+        "name": "UserLoginFailed",
+        "title": "user.login_failed v1",
+        "payload": {
+          "type": "object",
+          "required": ["eventId", "eventType", "version", "occurredAt", "email", "reason", "attemptCount", "traceId"],
+          "properties": {
+            "eventId": { "type": "string", "format": "uuid" },
+            "eventType": { "type": "string", "const": "user.login_failed" },
+            "version": { "type": "integer", "const": 1 },
+            "occurredAt": { "type": "string", "format": "date-time" },
+            "userId": { "type": ["string", "null"] },
+            "email": { "type": "string", "format": "email" },
+            "reason": { "type": "string", "enum": ["BAD_CREDENTIALS", "LOCKED", "NOT_VERIFIED"] },
+            "attemptCount": { "type": "integer" },
+            "ip": { "type": "string" },
+            "traceId": { "type": "string" }
+          }
+        }
+      },
+      "SendMailJob": {
+        "name": "SendMailJob",
+        "title": "RabbitMQ mail job",
+        "payload": {
+          "type": "object",
+          "required": ["messageId", "to", "template", "vars", "traceId", "retryCount"],
+          "properties": {
+            "messageId": { "type": "string", "format": "uuid", "description": "Dedup key" },
+            "to": { "type": "string", "format": "email" },
+            "template": { "type": "string", "enum": ["verify-email", "welcome", "reset-password"] },
+            "vars": { "type": "object", "additionalProperties": true },
+            "traceId": { "type": "string" },
+            "retryCount": { "type": "integer", "minimum": 0, "maximum": 3 }
+          }
+        }
+      },
+      "SendSmsJob": {
+        "name": "SendSmsJob",
+        "title": "RabbitMQ sms job",
+        "payload": {
+          "type": "object",
+          "required": ["messageId", "phone", "text", "traceId", "retryCount"],
+          "properties": {
+            "messageId": { "type": "string", "format": "uuid" },
+            "phone": { "type": "string" },
+            "text": { "type": "string", "maxLength": 160 },
+            "traceId": { "type": "string" },
+            "retryCount": { "type": "integer" }
+          }
+        }
+      },
+      "AuditJob": {
+        "name": "AuditJob",
+        "title": "RabbitMQ audit job",
+        "payload": {
+          "type": "object",
+          "required": ["messageId", "action", "userId", "detail", "traceId"],
+          "properties": {
+            "messageId": { "type": "string", "format": "uuid" },
+            "action": { "type": "string", "example": "USER_REGISTER" },
+            "userId": { "type": "string" },
+            "detail": { "type": "string" },
+            "ip": { "type": "string" },
+            "traceId": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

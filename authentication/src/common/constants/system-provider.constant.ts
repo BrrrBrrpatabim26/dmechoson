@@ -1,0 +1,16 @@
+export const SYSTEM_PROVIDER = {
+  LOCAL: 'local',
+  GOOGLE: 'google',
+  FACEBOOK: 'facebook',
+  GITHUB: 'github',
+  APPLE: 'apple',
+  MICROSOFT: 'microsoft',
+  LINKEDIN: 'linkedin',
+  DISCORD: 'discord',
+  TWITTER: 'twitter',
+  AMAZON: 'amazon',
+  SMS: 'sms',
+  PASSKEY: 'passkey',
+  EMAIL: 'email',
+  PHONE: 'phone',
+} as const;

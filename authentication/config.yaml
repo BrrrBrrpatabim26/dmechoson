@@ -1,0 +1,66 @@
+# ==============================================================================
+# TỆP CẤU HÌNH YAML DỊCH VỤ XÁC THỰC (AUTHENTICATION SERVICE)
+# ==============================================================================
+
+app:
+  nodeEnv: "development"
+  port: 3001
+  portAutoIncrement: true # Tự động tăng port khi cổng bị chiếm (EADDRINUSE)
+  portMaxAttempts: 1000 # Số lần thử cổng tối đa
+  appName: "Authentication Service"
+  clientUrl: "http://localhost:3000"
+
+# Cấu hình Database Đa hình (Chuyển đổi linh hoạt giữa postgres và mysql)
+database:
+  type: "postgres" # 'postgres' hoặc 'mysql'
+  host: "localhost" # 'localhost' (host machine) hoặc 'postgres' (trong Docker)
+  port: 5432 # 5432 (postgres) hoặc 3306 (mysql)
+  username: "postgres"
+  password: "your_password"
+  database: "authentication"
+  synchronize: true
+  logging: false
+  ssl: false
+
+jwt:
+  # Secret KHÔNG đặt trong file config commit vào repo. Cấp bắt buộc qua env JWT_SECRET (mục 5.3).
+  secret: ""
+  expiresIn: "15m"
+  refreshExpiresDays: 7
+
+hash:
+  defaultAlgorithm: "argon2id"
+  argon2MemoryCost: 65536
+  argon2TimeCost: 3
+  argon2Parallelism: 1
+  bcryptRounds: 12
+
+swagger:
+  enabled: true
+  path: "docs"
+
+# Rate Limiting (chống brute-force)
+throttler:
+  ttl: 60000
+  limit: 20
+
+# MFA / TOTP
+mfa:
+  issuer: "AgentCloud Auth"
+  recoveryCodeCount: 8
+
+# Passkey / WebAuthn
+webauthn:
+  rpName: "AgentCloud"
+  rpId: "localhost"
+  origin: "http://localhost:3001"
+
+# Redis (tuy chon): bat = ON_REDIS qua env, hoac enabled o day.
+# Khi bat: RBAC cache, Throttler storage va WebAuthn challenge chuyen sang Redis (scale ngang).
+# env (ON_REDIS, REDIS_URL, REDIS_HOST...) LUU UU TIEN hon yaml.
+redis:
+  enabled: false
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0

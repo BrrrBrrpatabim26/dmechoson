@@ -1,0 +1,88 @@
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/authdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${DB_USER:root}
+    password: ${DB_PASS:root}
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      enable-idempotence: true
+      compression-type: lz4
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: auth-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.example.auth.*"
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 3
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USER:guest}
+    password: ${RABBIT_PASS:guest}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 5000
+          multiplier: 3.0
+          max-interval: 60000
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-256bit-secret-change-me-256bit-secret}
+    access-ttl-minutes: 15
+    refresh-ttl-days: 7
+  auth:
+    max-failed-attempts: 5
+    lock-minutes: 15
+    verify-token-ttl-hours: 24
+    reset-token-ttl-minutes: 30
+
+kafka-topics:
+  registered: user.registered
+  verified: user.verified
+  login-failed: user.login_failed
+
+rabbit:
+  exchange: user.direct
+  queue-mail: user.mail.queue
+  queue-sms: user.sms.queue
+  queue-audit: user.audit.queue
+  queue-dlq: user.dlq
+  rk-mail: user.mail.send
+  rk-sms: user.sms.send
+  rk-audit: user.audit.log
+
+logging:
+  level:
+    com.example.auth: INFO

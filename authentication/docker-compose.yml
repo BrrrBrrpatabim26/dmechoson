@@ -1,0 +1,195 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Cơ sở dữ liệu PostgreSQL (Mặc định)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres
+    restart: unless-stopped
+    environment:
+      # Cấu hình bắt buộc: dùng ${VAR:?} để DỪNG khởi động khi thiếu, không che bằng default.
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE is required}
+    ports:
+      # Cổng publish ra Host lấy từ biến (không hardcode); container postgres luôn listen nội bộ 5432.
+      - "${DB_HOST_PORT:?DB_HOST_PORT is required}:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+      # Mount script khởi tạo tự động extensions và schema
+      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:?DB_USERNAME is required} -d ${DB_DATABASE:?DB_DATABASE is required}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auth-network
+
+  # ----------------------------------------------------------------------------
+  # 2. Dịch vụ xác thực (Authentication Service)
+  # ----------------------------------------------------------------------------
+  auth-service:
+    # Pin tag cụ thể (KHÔNG dùng :latest - AGENTS 1.2 #5). Giá trị lấy từ env IMAGE_TAG.
+    image: ${AUTH_IMAGE_NAME:-agent-cloud/auth-service}:${IMAGE_TAG:?IMAGE_TAG is required}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      # Cho phép container kết nối trực tiếp vào máy Host thông qua host.docker.internal
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: production
+      # Cổng lắng nghe trong container lấy từ biến bắt buộc (không hardcode trong compose).
+      PORT: ${PORT:?PORT is required}
+      # Trong Docker cổng phải ỔN ĐỊNH (Nginx/upstream cần service:port cố định) -> tắt tự tăng (mục 6.2).
+      PORT_AUTO_INCREMENT: ${PORT_AUTO_INCREMENT:-false}
+      PORT_MAX_ATTEMPTS: ${PORT_MAX_ATTEMPTS:-20}
+      APP_NAME: "Authentication Service"
+      CLIENT_URL: ${CLIENT_URL:?CLIENT_URL is required}
+
+      # Cấu hình Database Đa hình (Chạy trong Docker kết nối qua hostname 'postgres')
+      # DB_PORT là cổng nội bộ của service postgres trong mạng compose (không hardcode: lấy từ biến).
+      DB_TYPE: ${DB_TYPE:?DB_TYPE is required}
+      DB_HOST: ${DOCKER_DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:?DB_PORT is required}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_DATABASE: ${DB_DATABASE:?DB_DATABASE is required}
+      # S8-deploy: khong hardcode synchronize=true trong compose (AGENTS 1.2 #11 + SECURITY.md checklist).
+      # Production: DB_SYNCHRONIZE=false + DB_RUN_MIGRATIONS=true (migration job). Local dev bat true trong .env.
+      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-false}
+      DB_LOGGING: "false"
+      DB_SSL: "false"
+      # Migration tu dong (bat khi DB_SYNCHRONIZE=false tren prod); connection pool tuy chang.
+      DB_RUN_MIGRATIONS: ${DB_RUN_MIGRATIONS:-false}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_IDLE_MS: ${DB_POOL_IDLE_MS:-30000}
+
+      # JWT Settings - secret BẮT BUỘC phải cấp từ env, không hardcode/default trong compose.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_EXPIRES_DAYS: ${REFRESH_TOKEN_EXPIRES_DAYS:-7}
+
+      # Password Hashing Polymorphism
+      HASH_DEFAULT_ALGORITHM: ${HASH_DEFAULT_ALGORITHM:-argon2id}
+      HASH_ARGON2_MEMORY_COST: 65536
+      HASH_ARGON2_TIME_COST: 3
+      HASH_ARGON2_PARALLELISM: 1
+      HASH_BCRYPT_ROUNDS: 12
+
+      # Swagger UI - mac dinh TAT trong image deploy (SECURITY.md: thu be mat tai prod);
+      # local dev bat SWAGGER_ENABLED=true trong .env.
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      SWAGGER_PATH: ${SWAGGER_PATH:-docs}
+
+      # Credentials mail là secrets -> KHÔNG nhúng giá trị thật/default trong compose; cấp qua env khi MAIL_STRATEGY=smtp.
+      MAIL_STRATEGY: ${MAIL_STRATEGY:-console}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      AUTH_ENABLED_METHODS: ${AUTH_ENABLED_METHODS:-password,email_otp,phone_otp,magic_link,google,github,passkey}
+      # Bootstrap SUPER_ADMIN dau tien (csv email, mac dinh rong = tat). Grant luc boot, co log giam sat.
+      ADMIN_BOOTSTRAP_EMAILS: ${ADMIN_BOOTSTRAP_EMAILS:-}
+      # Super role toan quyen (csv) + role mac dinh signup — dong hoa tu env, khong hard-code trong code.
+      SUPER_ADMIN_ROLES: ${SUPER_ADMIN_ROLES:-}
+      DEFAULT_USER_ROLE: ${DEFAULT_USER_ROLE:-}
+
+      # OAuth Google/GitHub: credentials cấp từ env (khong hardcode trong compose). De trong -> method bi chan (AUTH_METHOD_DISABLED).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-}
+
+      # MFA: S7 - production bat buoc khoa chuyen dung (MfaService fail-fast neu thieu);
+      # cap tu env/secret manager, khong default trong compose.
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?MFA_ENCRYPTION_KEY is required}
+
+      # Redis (bat/tat bang ON_REDIS). Khi ON_REDIS=true thi REDIS_URL tro toi service 'redis' trong mang compose.
+      # REDIS_URL cấp từ env (không hardcode host/port trong compose); để trống -> app dùng REDIS_HOST/REDIS_PORT từ env.
+      ON_REDIS: ${ON_REDIS:-false}
+      REDIS_URL: ${REDIS_URL:-}
+    healthcheck:
+      # Probe GET /api/v1/health (Terminus ping DB) - AGENTS 1.2 #10. Node 22 co fetch; alpine khong co curl/wget.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/api/v1/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    ports:
+      # Host port và container port đều lấy từ biến (không hardcode số cổng trong compose).
+      #   Du dung:  AUTH_HOST_PORT=3099 docker compose up -d
+      - "${AUTH_HOST_PORT:?AUTH_HOST_PORT is required}:${PORT:?PORT is required}"
+    networks:
+      - auth-network
+
+  # ----------------------------------------------------------------------------
+  # 3. Redis (TUY CHON - chi khoi dong khi bat profile 'redis')
+  #    Dung cho: RBAC cache, Throttler storage, WebAuthn challenge (scale ngang).
+  #    Bat:      ON_REDIS=true docker compose --profile redis up -d
+  #    Khong dung redis thi DON THUC not profile -> redis khong khoi dong.
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: auth-redis
+    restart: unless-stopped
+    profiles: ["redis"]
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      # Cổng publish ra Host lấy từ biến (không hardcode); redis image luôn listen nội bộ 6379.
+      - "${REDIS_HOST_PORT:?REDIS_HOST_PORT is required}:6379"
+    volumes:
+      - redis_auth_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - auth-network
+
+  # ----------------------------------------------------------------------------
+  # 3. Cơ sở dữ liệu MySQL (Tùy chọn đa hình - Bỏ comment nếu muốn dùng MySQL)
+  # ----------------------------------------------------------------------------
+  # mysql:
+  #   image: mysql:8.4
+  #   container_name: auth-mysql
+  #   restart: unless-stopped
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-your_password}
+  #     MYSQL_DATABASE: ${DB_DATABASE:-authentication}
+  #     MYSQL_USER: ${DB_USERNAME:-auth_user}
+  #     MYSQL_PASSWORD: ${DB_PASSWORD:-your_password}
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - mysql_auth_data:/var/lib/mysql
+  #   networks:
+  #     - auth-network
+
+networks:
+  auth-network:
+    driver: bridge
+
+volumes:
+  postgres_auth_data:
+    driver: local
+  redis_auth_data:
+    driver: local
+  # mysql_auth_data:
+  #   driver: local
